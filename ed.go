@@ -6,7 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
-	_ "strings"
+	"strings"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	pcapFile    string = "/Users/path/to/pcap"
+	pcapFile    string
 	handle      *pcap.Handle
 	err         error
 	snapshotLen int32 = 1024 // tcpdump defults ipv4=68 ipv6=96
@@ -37,10 +37,7 @@ func removeSingleComm(remsrc string, remdst string, outpcap string) {
 	defer outfile.Close()
 	w := pcapgo.NewWriter(outfile)
 	defer outfile.Close()
-	var (
-		snapshotLen int32 = 1024 // tcpdump defults ipv4=68 ipv6=96
-		//		packetCount int = 0
-	)
+
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	w.WriteFileHeader(uint32(snapshotLen), layers.LinkTypeEthernet)
 
@@ -170,29 +167,31 @@ func maskDomain(mask string, outpcap string) {
 		dnsLayer := packet.Layer(layers.LayerTypeDNS)
 		dnss, _ := dnsLayer.(*layers.DNS)
 		if dnss != nil {
-			//stringy := string(dnss.Questions[0].Name)
-			//if strings.Contains(stringy, "gogo6.com") {
-			fmt.Println("doing an edit.")
-			//newquery := strings.Replace(stringy, "gogo6.com", "this.sucks", 1)
-			dnss.Questions[0].Name = []byte("this.sucks")
+			//fmt.Println("print1", packet.Metadata().CaptureInfo.Length)
+			stringy := dnss.Questions[0].Name
+			newquery := strings.Replace(string(stringy), mask, "fuck.this", 1)
+			dnss.Questions[0].Name = []byte(newquery)
+
+			newlen := len(stringy) - len(dnss.Questions[0].Name)
+			fmt.Println("lendif", newlen)
+
+			//fmt.Printf("%s", dnss.Questions[0])
 
 			options := gopacket.SerializeOptions{
 				ComputeChecksums: false,
 				FixLengths:       true,
 			}
-			//fmt.Println("%s\n", packet.ApplicationLayer().Payload())
 			*packet.ApplicationLayer().(*layers.DNS) = *dnss //[]byte("Hello World!")
-			packet.TransportLayer().(*layers.UDP).SetNetworkLayerForChecksum(packet.NetworkLayer())
+
 			// Serialize Packet to get raw bytes
 			buffer := gopacket.NewSerializeBuffer()
 			if err := gopacket.SerializePacket(buffer, options, packet); err != nil {
 				log.Fatalln(err)
 			}
 			packetBytes := buffer.Bytes()
-			w.WritePacket(packet.Metadata().CaptureInfo, packetBytes)
-			//continue
+			// dfmt.Println("print2", packet.Metadata().CaptureInfo.CaptureLength)
+			w.WritePacket(gopacket.CaptureInfo{Timestamp: packet.Metadata().CaptureInfo.Timestamp, Length: packet.Metadata().CaptureInfo.Length - newlen, CaptureLength: packet.Metadata().CaptureInfo.CaptureLength}, packetBytes)
 		}
-		//}
 		//w.WritePacket(packet.Metadata().CaptureInfo, packet.Data())
 	}
 }
@@ -207,6 +206,7 @@ func main() {
 	flag.StringVar(&remdst, "removedst", "none", "The destination IP to remove. If both source and dest are specified, all traffic between the two will be removerd.")
 	flag.StringVar(&dstipnot, "dstipnot", "none", "An IP paired with a source to NOT remove. specifying this option along with source IP will remove all traffic that is between the source IP and anything else thats not this IP")
 	flag.StringVar(&outfile, "w", "./out.pcapng", "path to save the new pcap")
+	flag.StringVar(&pcapFile, "r", "", "Original pcap file to read")
 
 	flag.Parse()
 

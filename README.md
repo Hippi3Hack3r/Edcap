@@ -1,7 +1,9 @@
 # Edcap
-Edcap is a program for removing traffic from packet capture files.
+Edcap is a program for selectively removing traffic from capture files.
 
-Right now it can selectively remove traffic from specific IP addresses, as well as mask the domains in dns requests with a replacement of your choice.
+It can remove traffic between two hosts, from a single host, or between a host and not another host.
+
+Dns replacement is in the works, but as of the writing of this, it only works when the specified replacement string and the new string are the same length.
 
 #### A note about masking dns requests
 This program only changes the domain requested. One could easily use the answer two the request and the time of the request to do
