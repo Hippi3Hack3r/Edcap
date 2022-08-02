@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/csv"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/google/gopacket"
@@ -21,6 +23,70 @@ var (
 	snapshotLen int32 = 1024 // tcpdump defults ipv4=68 ipv6=96
 )
 
+func writeToCsv(outf string) {
+	fmt.Printf("Writing packet data to a csv file")
+	handle, err = pcap.OpenOffline(pcapFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer handle.Close()
+
+	outfile, err := os.Create(outf)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+	w := csv.NewWriter(outfile)
+	defer w.Flush()
+
+	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+
+	for {
+		packet, err := packetSource.NextPacket()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			log.Println("Error:", err)
+			continue
+		}
+
+		var src, dst, proto, sport, dport, ttl, flags string
+		var payload []byte
+		timestamp := packet.Metadata().CaptureInfo.Timestamp
+
+		ipLayer := packet.Layer(layers.LayerTypeIPv4)
+		ip, _ := ipLayer.(*layers.IPv4)
+		if ip != nil {
+			src = ip.SrcIP.String()
+			dst = ip.DstIP.String()
+			proto = string(ip.Protocol)
+			ttl = strconv.Itoa(int(ip.TTL))
+			flags = string(ip.Flags)
+
+			tcpLayer := packet.Layer(layers.LayerTypeTCP)
+			udpLayer := packet.Layer(layers.LayerTypeUDP)
+			if tcpLayer != nil {
+				tcp, _ := tcpLayer.(*layers.TCP)
+				sport = strconv.Itoa(int(tcp.SrcPort))
+				dport = strconv.Itoa(int(tcp.DstPort))
+			} else if udpLayer != nil {
+				udp, _ := udpLayer.(*layers.UDP)
+				sport = strconv.Itoa(int(udp.SrcPort))
+				dport = strconv.Itoa(int(udp.DstPort))
+			} else {
+				continue
+			}
+			applicationLayer := packet.ApplicationLayer()
+			if applicationLayer != nil {
+				payload = applicationLayer.Payload()
+			} else {
+				payload = []byte("")
+			}
+			s := []string{timestamp.String(), src, dst, proto, ttl, flags, sport, dport, string(payload)}
+			w.Write(s)
+		}
+	}
+}
 func removeSingleComm(remsrc string, remdst string, outpcap string) {
 	fmt.Printf("Removing packets between %s and %s", remsrc, remdst)
 	handle, err = pcap.OpenOffline(pcapFile)
@@ -175,8 +241,6 @@ func maskDomain(mask string, outpcap string) {
 			newlen := len(stringy) - len(dnss.Questions[0].Name)
 			fmt.Println("lendif", newlen)
 
-			//fmt.Printf("%s", dnss.Questions[0])
-
 			options := gopacket.SerializeOptions{
 				ComputeChecksums: false,
 				FixLengths:       true,
@@ -189,17 +253,17 @@ func maskDomain(mask string, outpcap string) {
 				log.Fatalln(err)
 			}
 			packetBytes := buffer.Bytes()
-			// dfmt.Println("print2", packet.Metadata().CaptureInfo.CaptureLength)
 			w.WritePacket(gopacket.CaptureInfo{Timestamp: packet.Metadata().CaptureInfo.Timestamp, Length: packet.Metadata().CaptureInfo.Length - newlen, CaptureLength: packet.Metadata().CaptureInfo.CaptureLength}, packetBytes)
 		}
-		//w.WritePacket(packet.Metadata().CaptureInfo, packet.Data())
+		w.WritePacket(packet.Metadata().CaptureInfo, packet.Data())
 	}
 }
 
 func main() {
 
-	var purge, remsrc, remdst, dstipnot, domainmask, outfile string
+	var purge, remsrc, remdst, dstipnot, domainmask, outfile, tocsv string
 
+	flag.StringVar(&tocsv, "tocsv", "false", "Create a csv file of important packet data")
 	flag.StringVar(&purge, "remove-all", "0.0.0.0", "Remove all packets where this IP appears as either the src or dst")
 	flag.StringVar(&domainmask, "mask-dns", "none", "replaces the domain requested with something else.")
 	flag.StringVar(&remsrc, "removesrc", "none", "The source IP to remove")
@@ -218,6 +282,8 @@ func main() {
 
 	if domainmask != "none" {
 		maskDomain(domainmask, outfile)
+	} else if tocsv != "false" {
+		writeToCsv(outfile)
 	} else if remsrc != "none" && remdst != "none" {
 		removeSingleComm(remsrc, remdst, outfile)
 	} else if remsrc != "none" && dstipnot != "none" {

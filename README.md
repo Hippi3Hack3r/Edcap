@@ -10,7 +10,7 @@ This program only changes the domain requested. One could easily use the answer 
 a reverse lookup for the domain. It also doesn't work yet.
 
 ## Usage
-The binary is available under releases.
+Binaries for Mac and Linux are available under releases.
 You will need to specify a few options:
 * removesrc: an IP address to remove. When paired with removedst, the program will remove all traffic between the two.
 This is bidirectional, to remove only traffic from src -> dst and not vice versa also specify `-uni=True` (once it's implemented)
